@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>❤️ Love Quest: The Lost Memories</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Google Fonts for cozy modern typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Quicksand:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Main Game Container -->
+  <div id="game-container">
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <!-- UI Overlay for Level Title Fades -->
+    <div id="level-title-card" class="hidden">
+      <h1 id="level-title-text">Blossom Meadow</h1>
+      <p id="level-theme-text">First Impressions & New Beginnings</p>
+    </div>
+
+    <!-- UI Overlay for Dialogue Box -->
+    <div id="dialogue-box" class="hidden">
+      <div class="dialogue-content">
+        <div id="speaker-portrait" class="portrait-container">
+          <canvas id="portraitCanvas" width="64" height="64"></canvas>
+        </div>
+        <div class="dialogue-text-container">
+          <div id="speaker-name">Mochi</div>
+          <div id="dialogue-text">...</div>
+        </div>
+      </div>
+      <div id="dialogue-indicator" class="pulse">Space / Click to continue</div>
+    </div>
+
+    <!-- 1. Top HUD Bar -->
+    <div id="hud-top-bar" class="hidden">
+      <!-- Left: Player Status -->
+      <div class="hud-player-status">
+        <div class="hud-avatar-container">
+          <div class="hud-avatar">🐰</div>
+          <div class="hud-level-badge">10</div>
+        </div>
+        <div class="hud-bars">
+          <!-- HP Bar -->
+          <div class="hud-bar-container hp">
+            <span class="hud-bar-icon">❤️</span>
+            <div class="hud-bar-fill-wrapper">
+              <div id="hud-hp-bar" class="hud-bar-fill" style="width: 100%;"></div>
+              <div class="hud-bar-text">100/100</div>
+            </div>
+          </div>
+          <!-- Stamina Bar -->
+          <div class="hud-bar-container stamina">
+            <span class="hud-bar-icon">⚡</span>
+            <div class="hud-bar-fill-wrapper">
+              <div id="hud-stamina-bar" class="hud-bar-fill" style="width: 100%;"></div>
+              <div class="hud-bar-text">50/50</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center: Resources -->
+      <div class="hud-resources">
+        <div class="resource-item flowers" id="btn-bag-toggle">
+          <span class="resource-icon">🌸</span>
+          <span id="res-flowers-text" class="resource-val">0</span>
+        </div>
+        <div class="resource-item gems">
+          <span class="resource-icon">💎</span>
+          <span id="res-gems-text" class="resource-val">0</span>
+        </div>
+        <div class="resource-item coins">
+          <span class="resource-icon">🪙</span>
+          <span id="res-coins-text" class="resource-val">120</span>
+          <button id="btn-add-coins" class="resource-add-btn">+</button>
+        </div>
+      </div>
+
+      <!-- Right: Help & Settings Toggle -->
+      <div class="hud-actions">
+        <button id="btn-help" class="hud-icon-btn">?</button>
+        <button id="btn-settings-toggle" class="hud-icon-btn">⚙️</button>
+      </div>
+    </div>
+
+    <!-- 2. Left Quest Panel -->
+    <div id="hud-quest-panel" class="hidden">
+      <div class="quest-panel-header">📌 Current Quest</div>
+      <ul id="quest-panel-list">
+        <!-- Dynamically populated tasks -->
+      </ul>
+      <div class="hud-level-info-card">Level 1/15</div>
+    </div>
+
+    <!-- 3. Virtual Controls (Bottom D-pad and Action Buttons) -->
+    <div id="hud-virtual-controls" class="hidden">
+      <!-- Bottom Left D-pad -->
+      <div id="virtual-dpad">
+        <div class="dpad-center">🌸</div>
+        <button id="dpad-up" class="dpad-btn">▲</button>
+        <button id="dpad-down" class="dpad-btn">▼</button>
+        <button id="dpad-left" class="dpad-btn">◀</button>
+        <button id="dpad-right" class="dpad-btn">▶</button>
+      </div>
+
+      <!-- Bottom Right Actions -->
+      <div id="action-buttons">
+        <button id="btn-action-interact" class="action-btn interact-btn">
+          <span class="btn-icon">🌸</span>
+          <span class="btn-label">Interact</span>
+        </button>
+        <button id="btn-action-tool" class="action-btn tool-btn">
+          <span class="btn-icon">🖐️</span>
+          <span class="btn-label">Action</span>
+        </button>
+        <button id="btn-action-pet" class="action-btn pet-btn">
+          <span class="btn-icon">🐰</span>
+          <span class="btn-label">Pet Mochi</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 4. Inventory (Bag) Overlay -->
+    <div id="inventory-overlay" class="hidden">
+      <div class="parchment-card">
+        <button id="close-inventory-btn" class="close-btn">×</button>
+        <h2>🎒 Mochi's Bag</h2>
+        <p class="card-subtitle">Items collected in this stage</p>
+        <div class="inventory-grid" id="inventory-grid-container">
+          <!-- Dynamically populated slots -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Settings Overlay (Includes Volume Sliders & Dev Controls) -->
+    <div id="settings-overlay" class="hidden">
+      <div class="parchment-card">
+        <button id="close-settings-btn" class="close-btn">×</button>
+        <h2>⚙️ Game Settings</h2>
+        <div class="settings-content">
+          <div class="setting-item">
+            <label>🎵 Music Volume</label>
+            <input type="range" id="slider-volume-music" min="0" max="100" value="70" class="cozy-slider" />
+          </div>
+          <div class="setting-item">
+            <label>🔊 Sound FX Volume</label>
+            <input type="range" id="slider-volume-sfx" min="0" max="100" value="80" class="cozy-slider" />
+          </div>
+          <div class="setting-item">
+            <label>🌍 Language</label>
+            <select id="select-language" class="cozy-select">
+              <option value="en">English (US)</option>
+              <option value="jp">日本語</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label>✨ Graphics Quality</label>
+            <select id="select-graphics" class="cozy-select">
+              <option value="high">High (UHD)</option>
+              <option value="low">Standard</option>
+            </select>
+          </div>
+          <div class="dev-tools-section">
+            <h3>🛠️ Developer Options</h3>
+            <div class="dev-buttons">
+              <button id="btn-skip-level-hud" class="cozy-btn btn-primary">⏩ Skip Stage</button>
+              <button id="btn-reset-game-hud" class="cozy-btn btn-danger">🔄 Full Reset</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Help Overlay -->
+    <div id="help-overlay" class="hidden">
+      <div class="parchment-card">
+        <button id="close-help-btn" class="close-btn">×</button>
+        <h2>❓ Game Guide</h2>
+        <div class="help-content">
+          <p>Help Mochi Bunny restore memories across the 15 magical stages of the kingdom! ❤️</p>
+          <br/>
+          <p>🌸 <b>Movement:</b> Use the <b>WASD</b> keys, <b>Arrow Keys</b>, or tap the on-screen <b>D-Pad</b> arrows.</p>
+          <p>🌸 <b>Interactions:</b> Approach glowing objects or NPCs and press <b>Space</b> or tap <b>Interact</b>.</p>
+          <p>🌸 <b>Pet Mochi:</b> Click the <b>Pet Mochi</b> button anytime to make Mochi do a happy hop!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Custom Notification Popups -->
+    <div id="hud-notification" class="hidden">
+      <div class="notification-card">
+        <div id="noti-icon" class="noti-icon">🏆</div>
+        <div class="noti-details">
+          <div id="noti-title" class="noti-title">Level Up!</div>
+          <div id="noti-desc" class="noti-desc">You are now Level 11!</div>
+        </div>
+        <button id="btn-noti-ok" class="noti-ok-btn">OK</button>
+      </div>
+    </div>
+
+    <!-- Scrapbook UI Overlay (Secret Ending / Scrapbook View) -->
+    <div id="scrapbook-overlay" class="hidden">
+      <div class="scrapbook-inner">
+        <button id="close-scrapbook-btn">×</button>
+        <div class="scrapbook-header">
+          <h2>🌸 Memory Scrapbook 🌸</h2>
+          <p>The beautiful moments you restored together</p>
+        </div>
+        <div class="scrapbook-pages" id="scrapbook-pages-container">
+          <!-- Dynamically populated polaroids and notes -->
+        </div>
+        <div class="scrapbook-footer">
+          <p id="scrapbook-final-message">Thank you for being my favorite adventure. ❤️</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Start Overlay (Autoplay click request) -->
+    <div id="start-overlay">
+      <div class="start-card">
+        <h1>❤️ Love Quest</h1>
+        <h3>The Lost Memories</h3>
+        <p>A cozy story adventure game dedicated to you.</p>
+        <button id="start-game-btn">Begin Adventure</button>
+        <div class="controls-guide">
+          <span>⌨️ Use <b>WASD</b> or <b>Arrow Keys</b> to walk</span>
+          <span>🖱️ <b>Space</b> or <b>Click</b> to interact</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Scripts -->
+  <script type="module" src="game.js?v=6"></script>
+</body>
+</html>
