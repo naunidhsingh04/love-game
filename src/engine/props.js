@@ -39,6 +39,33 @@ function getGrassTexture(baseHex) {
   return tex;
 }
 
+let _barkTex = null;
+function getBarkTexture() {
+  if (_barkTex) return _barkTex;
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#6b4a34';
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < 60; i++) {
+    const x = Math.random() * size;
+    const w = 2 + Math.random() * 5;
+    const shade = Math.random() > 0.5 ? 'rgba(40,25,18,0.35)' : 'rgba(140,100,70,0.3)';
+    ctx.strokeStyle = shade;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.bezierCurveTo(x + (Math.random() - 0.5) * 20, size * 0.4, x + (Math.random() - 0.5) * 20, size * 0.7, x + (Math.random() - 0.5) * 12, size);
+    ctx.stroke();
+  }
+  _barkTex = new THREE.CanvasTexture(c);
+  _barkTex.wrapS = _barkTex.wrapT = THREE.RepeatWrapping;
+  _barkTex.repeat.set(1, 3);
+  _barkTex.colorSpace = THREE.SRGBColorSpace;
+  return _barkTex;
+}
+
 // A small library of stylized, low-poly-but-PBR-shaded props shared across every level.
 // Flat-shaded foliage/faceted geometry for a "gem cut" cozy look, smooth-shaded rounded props
 // for softness, all using MeshStandardMaterial so the bloom/HDRI lighting rig reads as cinematic
@@ -72,6 +99,74 @@ export function createGroundPatch(size = 60, color = 0x8fd694) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
   mesh.receiveShadow = true;
+  return mesh;
+}
+
+const _dummyMat4 = new THREE.Object3D();
+
+/**
+ * Real instanced grass blades (not just a texture) scattered across `area`, swaying in a
+ * wind shader injected into MeshStandardMaterial via onBeforeCompile — keeps full PBR
+ * lighting/shadow-receiving while adding the vertex animation. `exclude` is a list of
+ * {x,z,radius} circles (ponds, paths, buildings) blades shouldn't spawn inside.
+ */
+export function createGrassField(area, count = 2500, color = 0x5aa04a, exclude = []) {
+  const bladeGeo = new THREE.PlaneGeometry(0.07, 0.42, 1, 3);
+  bladeGeo.translate(0, 0.21, 0);
+  const pos = bladeGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const t = pos.getY(i) / 0.42;
+    pos.setX(i, pos.getX(i) * (1 - t * 0.85));
+  }
+  bladeGeo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.75, side: THREE.DoubleSide, flatShading: false });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    mat.userData.shader = shader;
+    shader.vertexShader =
+      'uniform float uTime;\n' +
+      shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        float windPhase = instanceMatrix[3].x * 2.1 + instanceMatrix[3].z * 1.7;
+        float sway = sin(uTime * 1.6 + windPhase) * 0.09 * position.y;
+        transformed.x += sway;
+        transformed.z += sway * 0.4;`
+      );
+  };
+
+  const mesh = new THREE.InstancedMesh(bladeGeo, mat, count);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.frustumCulled = false;
+
+  let placed = 0;
+  let attempts = 0;
+  while (placed < count && attempts < count * 4) {
+    attempts++;
+    const x = area.minX + Math.random() * (area.maxX - area.minX);
+    const z = area.minZ + Math.random() * (area.maxZ - area.minZ);
+    let blocked = false;
+    for (const ex of exclude) {
+      if (Math.hypot(x - ex.x, z - ex.z) < ex.radius) { blocked = true; break; }
+    }
+    if (blocked) continue;
+    _dummyMat4.position.set(x, 0, z);
+    _dummyMat4.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    const s = 0.7 + Math.random() * 0.7;
+    _dummyMat4.scale.set(s, s * (0.8 + Math.random() * 0.5), s);
+    _dummyMat4.updateMatrix();
+    mesh.setMatrixAt(placed, _dummyMat4.matrix);
+    placed++;
+  }
+  mesh.count = placed;
+  mesh.instanceMatrix.needsUpdate = true;
+
+  mesh.userData.update = (t) => {
+    if (mat.userData.shader) mat.userData.shader.uniforms.uTime.value = t;
+  };
   return mesh;
 }
 
@@ -109,53 +204,98 @@ export function createDirtPath(points, width = 2.4, color = 0xe7c9a0) {
 export function createCherryTree(bloomColor = 0xffb6d9) {
   const group = new THREE.Group();
   const trunkH = 2.6 + Math.random() * 0.6;
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, trunkH, 6), _mat(0x8a5a3b));
-  trunk.position.y = trunkH / 2;
-  group.add(shadowed(trunk));
 
-  const foliageMat = _mat(bloomColor, { roughness: 0.85 });
-  const clusterCount = 4 + Math.floor(Math.random() * 2);
+  // A gently curved trunk (lathe-style stacked cylinders with slight lean) reads far more
+  // organic than a single straight cone, and the canvas bark texture breaks up the flat color.
+  const barkMat = new THREE.MeshStandardMaterial({ map: getBarkTexture(), roughness: 0.95, metalness: 0.02 });
+  const trunkCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3((Math.random() - 0.5) * 0.25, trunkH * 0.5, (Math.random() - 0.5) * 0.25),
+    new THREE.Vector3((Math.random() - 0.5) * 0.4, trunkH, (Math.random() - 0.5) * 0.4),
+  ]);
+  const trunkGeo = new THREE.TubeGeometry(trunkCurve, 8, 0.2, 7, false);
+  const trunk = new THREE.Mesh(trunkGeo, barkMat);
+  group.add(shadowed(trunk));
+  const topPos = trunkCurve.getPoint(1);
+
+  // Two-tone rounded foliage: a cluster of overlapping mid-poly spheres (not flat-shaded
+  // icosahedra) in slightly varied color/size gives a much softer, fuller canopy silhouette.
+  const foliageBase = new THREE.Color(bloomColor);
+  const foliageDeep = foliageBase.clone().offsetHSL(0, 0.05, -0.1);
+  const clusterCount = 7 + Math.floor(Math.random() * 4);
   for (let i = 0; i < clusterCount; i++) {
-    const s = 1.1 + Math.random() * 0.6;
-    const geo = new THREE.IcosahedronGeometry(s, 0);
-    const mesh = new THREE.Mesh(geo, foliageMat);
-    const angle = (i / clusterCount) * Math.PI * 2;
-    mesh.position.set(Math.cos(angle) * 0.7, trunkH + 0.6 + Math.random() * 0.5, Math.sin(angle) * 0.7);
-    mesh.rotation.set(Math.random(), Math.random(), Math.random());
+    const s = 0.75 + Math.random() * 0.65;
+    const geo = new THREE.SphereGeometry(s, 8, 7);
+    const tint = foliageBase.clone().lerp(foliageDeep, Math.random() * 0.7);
+    const mesh = new THREE.Mesh(geo, _mat(tint.getHex(), { roughness: 0.8, flatShading: false }));
+    const angle = (i / clusterCount) * Math.PI * 2 + Math.random() * 0.6;
+    const r = 0.5 + Math.random() * 0.55;
+    mesh.position.set(
+      topPos.x + Math.cos(angle) * r,
+      topPos.y + 0.3 + Math.random() * 0.9,
+      topPos.z + Math.sin(angle) * r
+    );
+    mesh.scale.y *= 0.85;
     group.add(shadowed(mesh));
   }
+  // A crowning cluster to round out the top silhouette.
+  const crown = new THREE.Mesh(new THREE.SphereGeometry(0.95 + Math.random() * 0.3, 10, 8), _mat(foliageBase.getHex(), { roughness: 0.8, flatShading: false }));
+  crown.position.set(topPos.x, topPos.y + 1.1, topPos.z);
+  group.add(shadowed(crown));
+
   return group;
 }
 
 const FLOWER_COLORS = [0xff6fa5, 0xffd166, 0xffffff, 0xc792ea, 0xff9770];
 
+let _petalGeo = null;
+function getPetalGeometry() {
+  if (_petalGeo) return _petalGeo;
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.bezierCurveTo(0.045, 0.015, 0.055, 0.08, 0, 0.13);
+  shape.bezierCurveTo(-0.055, 0.08, -0.045, 0.015, 0, 0);
+  _petalGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.006, bevelSegments: 2, curveSegments: 6 });
+  _petalGeo.translate(0, 0, -0.004);
+  return _petalGeo;
+}
+
 export function createFlower(colorIndex = null, glow = false) {
   const group = new THREE.Group();
   const color = FLOWER_COLORS[colorIndex ?? Math.floor(Math.random() * FLOWER_COLORS.length)];
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.35, 5), _mat(0x4c8c4a));
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.03, 0.35, 5), _mat(0x4c8c4a, { flatShading: false }));
   stem.position.y = 0.175;
   group.add(stem);
+  // A couple of small leaves along the stem add life beyond a bare pole.
+  for (const ly of [0.1, 0.2]) {
+    const leaf = new THREE.Mesh(getPetalGeometry(), _mat(0x5aa04f, { flatShading: false }));
+    leaf.scale.set(0.9, 1.3, 0.5);
+    leaf.rotation.set(Math.PI / 2.3, Math.random() * Math.PI * 2, 0);
+    leaf.position.set(0, ly, 0);
+    group.add(leaf);
+  }
 
   const petalMat = glow
-    ? new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, roughness: 0.4 })
-    : _mat(color, { roughness: 0.55 });
+    ? new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, roughness: 0.4, flatShading: false })
+    : _matSmooth(color, { roughness: 0.5 });
 
-  const petalCount = 5;
+  const petalCount = 6;
+  const petalGeo = getPetalGeometry();
   for (let i = 0; i < petalCount; i++) {
     const angle = (i / petalCount) * Math.PI * 2;
-    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 5), petalMat);
-    petal.scale.set(1, 0.6, 1.6);
-    petal.position.set(Math.cos(angle) * 0.09, 0.37, Math.sin(angle) * 0.09);
-    petal.lookAt(0, 0.37, 0);
+    const petal = new THREE.Mesh(petalGeo, petalMat);
+    petal.position.set(0, 0.37, 0);
+    petal.rotation.x = Math.PI * 0.42;
+    petal.rotation.z = angle;
     group.add(petal);
   }
-  const center = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), _mat(0xffd166));
+  const center = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 7), _matSmooth(0xffd166, { roughness: 0.6 }));
   center.position.y = 0.37;
   group.add(center);
 
   group.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
   if (glow) {
-    const light = new THREE.PointLight(color, glow ? 1.4 : 0, 2.5, 2);
+    const light = new THREE.PointLight(color, 1.4, 2.5, 2);
     light.position.y = 0.4;
     group.add(light);
   }

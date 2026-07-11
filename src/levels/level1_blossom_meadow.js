@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGroundPatch, createCherryTree, createFlower, createBench, createWindmill, createPond, createFencePost, createRock, createMailbox } from '../engine/props.js';
+import { createGroundPatch, createCherryTree, createFlower, createBench, createWindmill, createPond, createFencePost, createRock, createMailbox, createGrassField } from '../engine/props.js';
 import { createCat, createChick } from '../characters/critters.js';
 import { Dialogue } from '../systems/dialogue.js';
 import { Audio } from '../systems/audio.js';
@@ -96,6 +96,22 @@ export class BlossomMeadowLevel {
     this._spawnChicks();
     this._spawnCats();
     this._spawnFeedBowl();
+
+    const grass = createGrassField(
+      { minX: -23, maxX: 23, minZ: -23, maxZ: 23 },
+      2600,
+      0x6bb35a,
+      [
+        { x: 9, z: -9, radius: 2.2 },
+        { x: -9, z: -8, radius: 4.2 },
+        { x: -6, z: 6, radius: 1.4 },
+        { x: 7, z: 6, radius: 1.4 },
+        { x: -2, z: 9, radius: 1 },
+        { x: 2, z: 6.5, radius: 1 },
+      ]
+    );
+    this.group.add(grass);
+    this.animated.push((dt, t) => grass.userData.update(t));
 
     this.particles.addSakuraField({ minX: -22, maxX: 22, minZ: -22, maxZ: 22, minY: 0, maxY: 9 }, 36);
     this.fireflies = this.particles.addFireflyField({ minX: -20, maxX: 20, minZ: -20, maxZ: 20, minY: 0.4, maxY: 2 }, 16);
