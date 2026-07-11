@@ -19,9 +19,39 @@ import { Hud } from './systems/hud.js';
 import { STATE } from './systems/state.js';
 import { WorldMap } from './worldmap/worldmap.js';
 import { BlossomMeadowLevel } from './levels/level1_blossom_meadow.js';
+import { RiverOfWishesLevel } from './levels/level2_river_of_wishes.js';
+import { WhisperingForestLevel } from './levels/level3_whispering_forest.js';
+import { BloomGardenLevel } from './levels/level4_bloom_garden.js';
+import { CozyCastleLevel } from './levels/level5_cozy_castle.js';
+import { MelodyVillageLevel } from './levels/level6_melody_village.js';
+import { SnowflakeVillageLevel } from './levels/level7_snowflake_village.js';
+import { StarObservatoryLevel } from './levels/level8_star_observatory.js';
+import { ColorWorkshopLevel } from './levels/level9_color_workshop.js';
+import { CourageMountainLevel } from './levels/level10_courage_mountain.js';
+import { FestivalOfSmilesLevel } from './levels/level11_festival_of_smiles.js';
+import { DreamIslandsLevel } from './levels/level12_dream_islands.js';
+import { MemoryGroveLevel } from './levels/level13_memory_grove.js';
+import { HeartKingdomLevel } from './levels/level14_heart_kingdom.js';
+import { FinalGardenLevel } from './levels/level15_final_garden.js';
 import { LEVEL_DATA, getLevel } from './levels/levelData.js';
 
-const SUPPORTED_LEVELS = new Set([1]);
+const LEVEL_CLASSES = {
+  1: BlossomMeadowLevel,
+  2: RiverOfWishesLevel,
+  3: WhisperingForestLevel,
+  4: BloomGardenLevel,
+  5: CozyCastleLevel,
+  6: MelodyVillageLevel,
+  7: SnowflakeVillageLevel,
+  8: StarObservatoryLevel,
+  9: ColorWorkshopLevel,
+  10: CourageMountainLevel,
+  11: FestivalOfSmilesLevel,
+  12: DreamIslandsLevel,
+  13: MemoryGroveLevel,
+  14: HeartKingdomLevel,
+  15: FinalGardenLevel,
+};
 
 class Game {
   constructor() {
@@ -208,8 +238,15 @@ class Game {
       if (p < 100) setTimeout(step, 70);
       else setTimeout(() => {
         this.hud.setLoading(100, false);
-        Audio.startBGM(1);
-        this._beginArrivalSequence(getLevel(1));
+        const unlocked = Save.getUnlockedLevel();
+        if (unlocked > 1) {
+          // Returning player — drop them at the world map at their saved progress
+          // instead of forcing a replay of Level 1's arrival every time.
+          this._showMapAt(Math.min(unlocked, 15));
+        } else {
+          Audio.startBGM(1);
+          this._beginArrivalSequence(getLevel(1));
+        }
       }, 150);
     };
     step();
@@ -223,7 +260,8 @@ class Game {
     setFogRange(this.scene, this._levelFog.near, this._levelFog.far);
 
     if (this.level) this.level.unload();
-    this.level = new BlossomMeadowLevel(this.scene, this.particles, this.collision, this.hud);
+    const LevelClass = LEVEL_CLASSES[id];
+    this.level = new LevelClass(this.scene, this.particles, this.collision, this.hud);
     this.level.onComplete = () => this._onLevelComplete();
     this.level.load();
     this.level.group.visible = true;
@@ -270,10 +308,55 @@ class Game {
     this.state = STATE.LEVEL_COMPLETE;
     Audio.playHeartCrack();
     this.particles.heartBurst(this.player.root.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 0xff4d94);
-    this.hud.memoryRestoredNotif();
+    if (this.levelId !== 15) this.hud.memoryRestoredNotif();
     setTimeout(() => {
-      this.level.playCompletionDialogue(() => this._transitionToMap());
+      this.level.playCompletionDialogue(() => {
+        if (this.levelId === 15) this._showEnding();
+        else this._transitionToMap();
+      });
     }, 900);
+  }
+
+  _showMapAt(unlockedLevel) {
+    if (this.level) this.level.group.visible = false;
+    setFogRange(this.scene, this._mapFog.near, this._mapFog.far);
+    this.hud.hideGameplayUI();
+    Audio.stopBGM();
+    this.worldMap.show(this.gameCamera);
+    this.worldMap.setUnlocked(unlockedLevel);
+    this.state = STATE.WORLD_MAP;
+  }
+
+  _showEnding() {
+    Save.setUnlockedLevel(16);
+    Audio.stopBGM();
+    Audio.playExplode();
+    this.particles.heartBurst(this.player.root.position.clone().add(new THREE.Vector3(0, 1.6, 0)), 0xffb6d9);
+
+    const el = document.createElement('div');
+    el.className = 'start-screen';
+    el.innerHTML = `
+      <div class="start-logo-row">
+        <div class="start-heart">💗</div>
+        <div class="start-game-title">The End</div>
+        <div class="start-game-subtitle">...for now</div>
+      </div>
+      <div class="start-card" style="max-width:560px;">
+        <div class="start-tagline" style="font-style:normal; line-height:1.6; font-size:14px;">
+          "If you've reached this moment, thank you for taking this journey. Every flower, every wish,
+          every song, every star, and every tiny detail was placed here because they reminded me of you.
+          I hope this adventure made you smile the way you make me smile every day. No matter where life
+          takes us, you'll always be my favorite adventure. ❤️"
+        </div>
+        <button class="start-btn" id="ending-map-btn">Revisit the Memories</button>
+        <div class="start-hint">Thank you for being my favorite adventure. ❤️</div>
+      </div>
+    `;
+    document.getElementById('app').appendChild(el);
+    el.querySelector('#ending-map-btn').addEventListener('click', () => {
+      el.remove();
+      this._showMapAt(Save.getUnlockedLevel());
+    });
   }
 
   _transitionToMap() {
@@ -290,28 +373,17 @@ class Game {
       ],
       2.2,
       () => {
-        if (this.level) this.level.group.visible = false;
-        setFogRange(this.scene, this._mapFog.near, this._mapFog.far);
-        this.worldMap.show(this.gameCamera);
         const prevUnlocked = Save.getUnlockedLevel();
-        this.worldMap.setUnlocked(prevUnlocked);
+        this._showMapAt(prevUnlocked);
         Save.setUnlockedLevel(prevUnlocked + 1);
         const newUnlocked = Save.getUnlockedLevel();
-        this.state = STATE.WORLD_MAP;
-        if (newUnlocked !== prevUnlocked) {
+        if (newUnlocked !== prevUnlocked && newUnlocked <= 15) {
           this.worldMap.startHop(prevUnlocked, newUnlocked, () => {
             this.worldMap.setUnlocked(newUnlocked);
           });
         }
       }
     );
-  }
-
-  _enterMapAtCurrent() {
-    this.state = STATE.WORLD_MAP;
-    this.hud.hideGameplayUI();
-    this.worldMap.show(this.gameCamera);
-    this.worldMap.setUnlocked(Save.getUnlockedLevel());
   }
 
   _onMapNodeClick(id) {
@@ -321,7 +393,7 @@ class Game {
       this.hud.notify('Locked', 'Restore the memory before this one first.', '🔒');
       return;
     }
-    if (SUPPORTED_LEVELS.has(id)) {
+    if (LEVEL_CLASSES[id]) {
       this._enterLevel(id);
       return;
     }
